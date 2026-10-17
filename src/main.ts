@@ -47,7 +47,7 @@ const boot = async () => {
   const carousel = createCarousel(PRODUCTS.length, () => window.innerWidth / window.innerHeight)
   const world = createWorld(must<HTMLCanvasElement>('#stage'), PRODUCTS, backdrop, scroll, carousel)
   const hero = initHero(carousel, backdrop, world)
-  const sections = initSections()
+  const sections = initSections(scroll)
 
   if (import.meta.env.DEV) {
     Object.assign(window, {
@@ -68,6 +68,7 @@ const boot = async () => {
   scroll.update(true)
   world.frame(0)
 
+  gsap.ticker.fps(60) // monitores de 120/144 Hz não precisam renderizar além disso
   gsap.ticker.add((time) => {
     world.frame(time)
     sections.update(scroll.state)

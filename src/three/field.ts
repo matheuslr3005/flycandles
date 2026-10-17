@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { Product } from '../data/products'
+import type { Matcaps } from './matcap'
 import { makeLabelTexture } from './labelTexture'
 import {
+  FIELD,
   TIN,
   createBodyGeometry,
   createLabelGeometry,
@@ -10,9 +12,9 @@ import {
   createLidSideGeometry,
 } from './tinGeometry'
 
-const COLS = 13
-const ROWS = 17
 const SPACING = 2.4
+/** Menos latas em celulares: a leitura é a mesma e a GPU agradece. */
+const GRID = { full: { cols: 10, rows: 12 }, lite: { cols: 7, rows: 10 } } as const
 
 type Tin = { x: number; z: number; yaw: number; variant: number; slot: number; phase: number }
 
@@ -25,24 +27,25 @@ const hash = (a: number, b: number) => {
  * Um mar de latas inclinado para a câmera, como nas fotos da produção.
  * Cada variante de tampa é um InstancedMesh; casco e aro são compartilhados.
  */
-export const createField = (products: readonly Product[], renderer: THREE.WebGLRenderer) => {
+export const createField = (
+  products: readonly Product[],
+  renderer: THREE.WebGLRenderer,
+  matcaps: Matcaps,
+  lite = false,
+) => {
   const group = new THREE.Group()
+  const { cols: COLS, rows: ROWS } = lite ? GRID.lite : GRID.full
 
   const shellGeo = mergeGeometries([
-    createBodyGeometry(),
-    createLidSideGeometry().translate(0, TIN.LID_Y, 0),
+    createBodyGeometry(FIELD),
+    createLidSideGeometry(FIELD).translate(0, TIN.LID_Y, 0),
   ])
-  const ringGeo = createLidRingGeometry().translate(0, TIN.LID_Y, 0)
-  const labelGeo = createLabelGeometry().translate(0, TIN.LID_Y, 0)
+  const ringGeo = createLidRingGeometry(FIELD).translate(0, TIN.LID_Y, 0)
+  const labelGeo = createLabelGeometry(FIELD).translate(0, TIN.LID_Y, 0)
   if (!shellGeo) throw new Error('Falha ao mesclar a geometria da lata')
 
-  const silver = new THREE.MeshStandardMaterial({
-    color: '#dcdfe4',
-    metalness: 1,
-    roughness: 0.34,
-    side: THREE.DoubleSide,
-  })
-  const dark = new THREE.MeshStandardMaterial({ color: '#17171a', metalness: 0.75, roughness: 0.4 })
+  const silver = new THREE.MeshMatcapMaterial({ matcap: matcaps.silver })
+  const dark = new THREE.MeshLambertMaterial({ color: '#2a2a2e' })
 
   const tins: Tin[] = []
   const counts = products.map(() => 0)
@@ -64,12 +67,9 @@ export const createField = (products: readonly Product[], renderer: THREE.WebGLR
   const shell = new THREE.InstancedMesh(shellGeo, silver, tins.length)
   const rings = new THREE.InstancedMesh(ringGeo, dark, tins.length)
   const labels = products.map((p, i) => {
-    const mat = new THREE.MeshPhysicalMaterial({
+    const mat = new THREE.MeshLambertMaterial({
       map: makeLabelTexture(p.lid, p.name, renderer),
-      color: '#cdcdcd',
-      roughness: 0.62,
-      specularIntensity: 0.4,
-      envMapIntensity: 0.5,
+      color: '#ffffff',
     })
     return new THREE.InstancedMesh(labelGeo, mat, Math.max(counts[i] ?? 0, 1))
   })

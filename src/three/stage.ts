@@ -1,8 +1,34 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { bakeMatcaps } from './matcap'
 
 const FOV = 28
 const CAMERA_DISTANCE = 17
+
+const backgroundVertex = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.999, 1.0);
+  }
+`
+
+/** Degradê radial + vinheta + grão, desenhados no próprio canvas (sem repintar CSS). */
+const backgroundFragment = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform vec3 uCenter;
+  uniform vec3 uEdge;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    float t = length((vUv - vec2(0.5, 0.58)) / vec2(1.3, 1.0));
+    vec3 col = mix(uCenter, uEdge, clamp(t, 0.0, 1.0));
+    float vignette = smoothstep(0.55, 1.0, length((vUv - vec2(0.5, 0.55)) / vec2(1.2, 0.9)));
+    col *= 1.0 - vignette * 0.22;
+    col *= 1.0 - 0.05 * hash(gl_FragCoord.xy);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`
 
 export type Stage = ReturnType<typeof createStage>
 
@@ -11,23 +37,52 @@ export type Stage = ReturnType<typeof createStage>
  * luzes que o resto do mundo reaproveita (a cor do recorte segue o tema).
  */
 export const createStage = (canvas: HTMLCanvasElement) => {
+  // celular/tablet: sem MSAA (caro em GPU móvel) e pixel ratio próprio
+  const coarse =
+    window.matchMedia('(pointer: coarse)').matches || Math.min(window.innerWidth, window.innerHeight) < 600
+  const baseRatio = Math.min(window.devicePixelRatio, coarse ? 2 : 1.5)
+
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
-    alpha: true,
+    // MSAA só sai em telas pequenas de alta densidade, onde o pixel ratio já suaviza as bordas
+    antialias: !coarse || window.devicePixelRatio < 2,
+    alpha: false,
     powerPreference: 'high-performance',
   })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setPixelRatio(baseRatio)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.NeutralToneMapping
   renderer.toneMappingExposure = 1.0
-  renderer.setClearColor(0x000000, 0)
 
   const scene = new THREE.Scene()
+  // o ambiente só serve para "assar" os matcaps; a cena em si não usa IBL por pixel
   const pmrem = new THREE.PMREMGenerator(renderer)
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.035).texture
-  scene.environmentIntensity = 0.75
-  scene.fog = new THREE.Fog('#d9c8a0', 40, 90)
+  const environment = pmrem.fromScene(new RoomEnvironment(), 0.035)
+  const matcaps = bakeMatcaps(renderer, environment.texture)
+  environment.dispose()
+  pmrem.dispose()
+  scene.fog = new THREE.Fog('#d9c8a0', 24, 52)
+
+  const backgroundMaterial = new THREE.ShaderMaterial({
+    vertexShader: backgroundVertex,
+    fragmentShader: backgroundFragment,
+    depthTest: false,
+    depthWrite: false,
+    uniforms: {
+      uCenter: { value: new THREE.Color() },
+      uEdge: { value: new THREE.Color() },
+    },
+  })
+  const background = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), backgroundMaterial)
+  background.frustumCulled = false
+  background.renderOrder = -1000
+  scene.add(background)
+
+  /** As cores chegam no espaço de trabalho (linear); o degradê é interpolado em sRGB, como no CSS. */
+  const setBackground = (center: THREE.Color, edge: THREE.Color) => {
+    ;(backgroundMaterial.uniforms.uCenter!.value as THREE.Color).copy(center).convertLinearToSRGB()
+    ;(backgroundMaterial.uniforms.uEdge!.value as THREE.Color).copy(edge).convertLinearToSRGB()
+  }
 
   const camera = new THREE.PerspectiveCamera(FOV, 1, 2, 120)
   camera.position.set(0, 1.9, CAMERA_DISTANCE)
@@ -40,7 +95,8 @@ export const createStage = (canvas: HTMLCanvasElement) => {
   const rim = new THREE.DirectionalLight('#ffffff', 2.4)
   rim.position.set(0.5, 3, -9)
   const flame = new THREE.PointLight('#ff9a3d', 0, 9, 2)
-  scene.add(key, fill, rim, flame, new THREE.HemisphereLight('#ffffff', '#553322', 0.25))
+  // luz ambiente no lugar do IBL: levanta os adesivos fosco (Lambert) sem custo por pixel
+  scene.add(key, fill, rim, flame, new THREE.AmbientLight('#ffffff', 1.6))
 
   const size = { w: 1, h: 1, aspect: 1 }
   const listeners = new Set<() => void>()
@@ -75,6 +131,34 @@ export const createStage = (canvas: HTMLCanvasElement) => {
     return Math.min(0.219 * h, 0.34 * w)
   }
 
+  // ---- resolução adaptativa: se o quadro demorar, baixamos o pixel ratio ----
+  const ratios = [1, 0.8, 0.65, 0.5].map((k) => Math.max(0.6, baseRatio * k))
+  let level = 0
+  let slowFrames = 0
+  let fastFrames = 0
+  let avg = 16
+
+  const adapt = (dtMs: number) => {
+    avg += (Math.min(dtMs, 100) - avg) * 0.1
+    if (avg > 24) slowFrames++
+    else slowFrames = Math.max(0, slowFrames - 1)
+    if (avg < 15) fastFrames++
+    else fastFrames = 0
+
+    if (slowFrames > 20 && level < ratios.length - 1) {
+      level++
+      slowFrames = 0
+      fastFrames = -400 // depois de cair, demora para tentar subir de novo
+      renderer.setPixelRatio(ratios[level] ?? baseRatio)
+      renderer.setSize(size.w, size.h, false)
+    } else if (fastFrames > 600 && level > 0) {
+      level--
+      fastFrames = 0
+      renderer.setPixelRatio(ratios[level] ?? baseRatio)
+      renderer.setSize(size.w, size.h, false)
+    }
+  }
+
   resize()
   window.addEventListener('resize', resize)
 
@@ -84,9 +168,13 @@ export const createStage = (canvas: HTMLCanvasElement) => {
     camera,
     lights: { key, fill, rim, flame },
     size,
+    coarse,
+    matcaps,
     ndcToWorld,
     worldHeight,
     unit,
+    setBackground,
+    adapt,
     onResize: (fn: () => void) => {
       listeners.add(fn)
       return () => listeners.delete(fn)

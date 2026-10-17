@@ -24,24 +24,36 @@ export const createWorld = (
   const stage = createStage(canvas)
   const { scene, camera, renderer } = stage
 
-  const candles = products.map((p) => createCandle(p, renderer))
+  const candles = products.map((p) => createCandle(p, renderer, stage.matcaps))
   const heroGroup = new THREE.Group()
   for (const c of candles) heroGroup.add(c.root)
   scene.add(heroGroup)
 
-  const field = createField(products, renderer)
+  const field = createField(products, renderer, stage.matcaps, stage.coarse)
   field.group.rotation.x = 0.98
   field.group.visible = false
   scene.add(field.group)
 
   const dust = createDust(renderer)
   scene.add(dust.points)
-  const asterisks = createAsterisks()
+  const asterisks = createAsterisks(stage.matcaps)
   scene.add(asterisks.group)
 
-  const cta = createLogoStage()
+  const cta = createLogoStage(stage.matcaps)
   cta.group.visible = false
   scene.add(cta.group)
+
+  // pré-compila as duas variantes de material (opaco e em dissolve) para a 1ª transição não engasgar
+  {
+    const hidden = candles.filter((c) => !c.root.visible)
+    for (const c of candles) {
+      c.root.visible = true
+      c.setOpacity(0.5)
+    }
+    renderer.compile(scene, camera)
+    for (const c of candles) c.setOpacity(1)
+    for (const c of hidden) c.root.visible = false
+  }
 
   const pointer = { x: 0, y: 0, tx: 0, ty: 0, seen: false }
   const spins = products.map(() => ({ value: 0, velocity: 0 }))
@@ -115,9 +127,15 @@ export const createWorld = (
     c.setOpacity(pose.opacity)
   }
 
+  let lastTime = 0
   const frame = (time: number) => {
+    const dtMs = lastTime ? (time - lastTime) * 1000 : 16
+    lastTime = time
+    stage.adapt(dtMs)
+    const pixelRatio = renderer.getPixelRatio()
     const sc = scroll.update()
     const palette = backdrop.apply(sc.weights)
+    stage.setBackground(palette.bgCenter, palette.bgEdge)
 
     pointer.x += (pointer.tx - pointer.x) * 0.07
     pointer.y += (pointer.ty - pointer.y) * 0.07
@@ -185,7 +203,7 @@ export const createWorld = (
         const candle = candles[i]
         if (candle) {
           candle.setOpen(i === active ? open : 0, portrait)
-          candle.update(time, camera)
+          candle.update(time, camera, pixelRatio)
         }
       })
 
@@ -235,6 +253,7 @@ export const createWorld = (
 
     // ---------- decor ----------
     dust.material.uniforms.uTime!.value = time
+    dust.material.uniforms.uPx!.value = pixelRatio
     ;(dust.material.uniforms.uPointer!.value as THREE.Vector2).set(pointer.x, pointer.y)
     ;(dust.material.uniforms.uColor!.value as THREE.Color).copy(palette.ink)
     asterisks.material.color.copy(palette.ink)

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { buildLogo3D } from './logo'
+import type { Matcaps } from './matcap'
 
 const dustVertex = /* glsl */ `
   attribute float aSeed;
@@ -32,7 +33,7 @@ const dustFragment = /* glsl */ `
 `
 
 /** Poeira dourada flutuando, no espírito do glitter dentro da cera. */
-export const createDust = (renderer: THREE.WebGLRenderer, count = 320) => {
+export const createDust = (renderer: THREE.WebGLRenderer, count = 200) => {
   const positions = new Float32Array(count * 3)
   const seeds = new Float32Array(count)
   for (let i = 0; i < count; i++) {
@@ -65,17 +66,10 @@ export const createDust = (renderer: THREE.WebGLRenderer, count = 320) => {
 type Asterisk = { mesh: THREE.Group; base: THREE.Vector3; speed: THREE.Vector3; phase: number; depth: number }
 
 /** Asteriscos da marca (✱) flutuando em camadas de profundidade. */
-export const createAsterisks = (count = 8) => {
+export const createAsterisks = (matcaps: Matcaps, count = 8) => {
   const group = new THREE.Group()
-  const material = new THREE.MeshPhysicalMaterial({
-    color: '#fbf0cf',
-    roughness: 0.28,
-    metalness: 0.1,
-    clearcoat: 1,
-    clearcoatRoughness: 0.15,
-    transparent: true,
-  })
-  const arm = new THREE.CapsuleGeometry(0.07, 0.62, 6, 14)
+  const material = new THREE.MeshMatcapMaterial({ matcap: matcaps.plastic, color: '#fbf0cf' })
+  const arm = new THREE.CapsuleGeometry(0.07, 0.62, 3, 8)
   const items: Asterisk[] = []
   for (let i = 0; i < count; i++) {
     const star = new THREE.Group()
@@ -120,15 +114,9 @@ export const createAsterisks = (count = 8) => {
 }
 
 /** Logo FLY em tubos 3D, para o fechamento da página. */
-export const createLogoStage = () => {
+export const createLogoStage = (matcaps: Matcaps) => {
   const group = new THREE.Group()
-  const material = new THREE.MeshPhysicalMaterial({
-    color: '#fbf0cf',
-    roughness: 0.22,
-    metalness: 0.15,
-    clearcoat: 1,
-    clearcoatRoughness: 0.12,
-  })
+  const material = new THREE.MeshMatcapMaterial({ matcap: matcaps.plastic, color: '#fbf0cf' })
   const logo = buildLogo3D(material, 0.052)
   group.add(logo)
   return { group, logo, material }

@@ -29,6 +29,8 @@ type Sections = { ritual: HTMLElement; field: HTMLElement; cta: HTMLElement }
  */
 export const createScrollModel = (els: Sections) => {
   const m = { vh: 1, ritualTop: 0, ritualH: 1, fieldTop: 0, fieldH: 1, ctaTop: 0, ctaH: 1 }
+  /** topo (em px absolutos) de cada seção, medido só no resize, nunca por frame */
+  const tops = { hero: 0, ritual: 0, field: 0, cta: 0 }
   const state: ScrollState = {
     y: 0,
     vh: 1,
@@ -52,6 +54,9 @@ export const createScrollModel = (els: Sections) => {
     m.fieldH = els.field.offsetHeight
     m.ctaTop = rect(els.cta)
     m.ctaH = els.cta.offsetHeight
+    tops.ritual = m.ritualTop
+    tops.field = m.fieldTop
+    tops.cta = m.ctaTop
   }
 
   const compute = () => {
@@ -81,7 +86,7 @@ export const createScrollModel = (els: Sections) => {
   window.addEventListener('resize', measure)
   window.addEventListener('load', measure)
 
-  return { state, update, measure }
+  return { state, update, measure, tops }
 }
 
 export type ScrollModel = ReturnType<typeof createScrollModel>

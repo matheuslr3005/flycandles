@@ -96,7 +96,7 @@ export const buildLogo3D = (material: THREE.Material, thickness = 0.045) => {
   const k = 2 / bw
   const cx = LOGO_BOUNDS.minX + bw / 2
   const cy = -(LOGO_BOUNDS.minY + bh / 2)
-  const capGeo = new THREE.SphereGeometry(thickness, 20, 14)
+  const capGeo = new THREE.SphereGeometry(thickness, 12, 8)
 
   const strokes = [...Object.values(LOGO_STROKES), LOGO_ASTERISK]
   for (const d of strokes) {
@@ -110,7 +110,7 @@ export const buildLogo3D = (material: THREE.Material, thickness = 0.045) => {
           ? new THREE.LineCurve3(first, last)
           : new THREE.CatmullRomCurve3(mapped, false, 'centripetal')
       const tube = new THREE.Mesh(
-        new THREE.TubeGeometry(curve, Math.max(8, mapped.length * 2), thickness, 14, false),
+        new THREE.TubeGeometry(curve, Math.max(8, mapped.length), thickness, 8, false),
         material,
       )
       group.add(tube)

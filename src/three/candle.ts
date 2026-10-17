@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { Product } from '../data/products'
 import { createFlameMaterial, createHaloMaterial } from './flame'
+import type { Matcaps } from './matcap'
 import { makeLabelTexture, makeShadowTexture } from './labelTexture'
 import {
   TIN,
@@ -55,7 +56,7 @@ export type Candle = {
   setOpen: (value: number, portrait?: boolean) => void
   /** Intensidade da chama (0..1) */
   readonly flameLevel: number
-  update: (time: number, camera: THREE.Camera) => void
+  update: (time: number, camera: THREE.Camera, pixelRatio: number) => void
 }
 
 const smooth = (v: number, a: number, b: number) => {
@@ -63,68 +64,39 @@ const smooth = (v: number, a: number, b: number) => {
   return t * t * (3 - 2 * t)
 }
 
-export const createCandle = (product: Product, renderer: THREE.WebGLRenderer): Candle => {
+export const createCandle = (
+  product: Product,
+  renderer: THREE.WebGLRenderer,
+  matcaps: Matcaps,
+): Candle => {
   const fadeables: (THREE.Material & { opacity: number })[] = []
-  // dissolve estocástico: evita os artefatos de ordenação da transparência em metal
   const track = <T extends THREE.Material>(m: T) => {
-    m.alphaHash = true
     fadeables.push(m)
     return m
   }
 
-  const silver = track(
-    new THREE.MeshStandardMaterial({
-      color: '#dcdfe4',
-      metalness: 1,
-      roughness: 0.3,
-      side: THREE.DoubleSide,
-    }),
-  )
-  const dark = track(
-    new THREE.MeshStandardMaterial({ color: '#17171a', metalness: 0.75, roughness: 0.38 }),
-  )
-  const innerTint = new THREE.Color('#dcdfe4').lerp(new THREE.Color(product.wax), 0.55)
-  const innerMat = track(
-    new THREE.MeshStandardMaterial({
-      color: innerTint,
-      metalness: 1,
-      roughness: 0.28,
-      side: THREE.DoubleSide,
-    }),
-  )
-  const lidUnderMat = track(
-    new THREE.MeshStandardMaterial({
-      color: '#b9bcc2',
-      metalness: 1,
-      roughness: 0.4,
-      side: THREE.DoubleSide,
-    }),
-  )
+  const silver = track(new THREE.MeshMatcapMaterial({ matcap: matcaps.silver }))
+  const dark = track(new THREE.MeshLambertMaterial({ color: '#2a2a2e' }))
+  const innerTint = new THREE.Color('#ffffff').lerp(new THREE.Color(product.wax), 0.55)
+  const innerMat = track(new THREE.MeshMatcapMaterial({ matcap: matcaps.silver, color: innerTint }))
+  const lidUnderMat = track(new THREE.MeshMatcapMaterial({ matcap: matcaps.silver, color: '#b4b6bc' }))
   const labelMat = track(
-    new THREE.MeshPhysicalMaterial({
+    new THREE.MeshLambertMaterial({
       map: makeLabelTexture(product.lid, product.name, renderer),
-      color: '#cdcdcd',
-      roughness: 0.62,
-      metalness: 0,
-      specularIntensity: 0.4,
-      envMapIntensity: 0.5,
+      color: '#ffffff',
     }),
   )
   const waxColor = new THREE.Color(product.wax)
   const waxMat = track(
-    new THREE.MeshPhysicalMaterial({
+    new THREE.MeshPhongMaterial({
       color: waxColor,
-      roughness: 0.38,
-      clearcoat: 0.6,
-      clearcoatRoughness: 0.25,
-      sheen: 0.25,
-      sheenColor: waxColor.clone().lerp(new THREE.Color('#ffffff'), 0.5),
+      specular: '#665544',
+      shininess: 50,
       emissive: waxColor,
       emissiveIntensity: 0,
-      side: THREE.DoubleSide,
     }),
   )
-  const wickMat = track(new THREE.MeshStandardMaterial({ color: '#241812', roughness: 0.8 }))
+  const wickMat = track(new THREE.MeshLambertMaterial({ color: '#241812' }))
 
   const tin = new THREE.Group()
   // o pivô de rotação fica no centro da lata, não na base
@@ -243,14 +215,24 @@ export const createCandle = (product: Product, renderer: THREE.WebGLRenderer): C
 
   const setOpacity = (value: number) => {
     opacity = value
-    for (const m of fadeables) m.opacity = value
+    // dissolve estocástico (alphaHash) só enquanto a lata está sumindo/aparecendo:
+    // evita a ordenação de transparência em metal e o custo extra no resto do tempo
+    const fading = value < 0.999
+    for (const m of fadeables) {
+      if (m.alphaHash !== fading) {
+        m.alphaHash = fading
+        m.needsUpdate = true
+      }
+      m.opacity = value
+    }
     shadowMat.opacity = 0.42 * value
     flameMat.uniforms.uOpacity!.value = value
     haloMat.uniforms.uOpacity!.value = value
     sparkleMat.uniforms.uOpacity!.value = value
   }
 
-  const update = (time: number, camera: THREE.Camera) => {
+  const update = (time: number, camera: THREE.Camera, pixelRatio: number) => {
+    sparkleMat.uniforms.uPx!.value = pixelRatio
     sparkleMat.uniforms.uTime!.value = time
     flameMat.uniforms.uTime!.value = time
     haloMat.uniforms.uTime!.value = time

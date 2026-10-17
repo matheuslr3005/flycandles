@@ -12,6 +12,19 @@ npm run build      # typecheck + build de produção em dist/
 
 Dica: `http://localhost:5173/?nointro` pula o loader de abertura.
 
+## Publicação (GitHub Pages)
+
+O workflow `.github/workflows/deploy.yml` builda e publica a cada push na branch principal.
+Na primeira vez, em **Settings → Pages**, deixe **Source = GitHub Actions**. O endereço fica em
+`https://<usuario>.github.io/flycandles/`.
+
+## Desempenho
+
+- Fundo (degradê, vinheta e grão) desenhado no próprio canvas, sem `backdrop-filter` nem blend CSS sobre o WebGL.
+- Reflexo do alumínio "assado" em matcap no boot; adesivos e cera usam materiais baratos (Lambert/Phong).
+- Campo de latas com geometria reduzida e menos latas em celulares; `alphaHash` só durante o fade.
+- Resolução adaptativa (baixa o pixel ratio se o quadro passar de ~24 ms), 60 fps no máximo, MSAA desligado em telas touch de alta densidade.
+
 ## O que tem
 
 1. **Hero** — carrossel de aromas inspirado na referência: a lata atual escapa para cima/esquerda

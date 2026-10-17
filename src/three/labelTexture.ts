@@ -90,7 +90,7 @@ export const makeLabelTexture = (style: LidStyle, scent: string, renderer?: THRE
 
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8
+  texture.anisotropy = renderer ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 4
   texture.needsUpdate = true
   return texture
 }

@@ -1,5 +1,5 @@
 import { logoSvg } from '../three/logo'
-import { smoothstep, type ScrollState } from './scrollModel'
+import { smoothstep, type ScrollModel, type ScrollState } from './scrollModel'
 
 const q = <T extends HTMLElement>(sel: string) => {
   const el = document.querySelector<T>(sel)
@@ -14,10 +14,10 @@ const STEP_RANGES: readonly [number, number][] = [
 ]
 const FINAL_AT = 0.86
 
-type NavSection = { id: string; el: HTMLElement; link: HTMLAnchorElement }
+type NavSection = { id: 'hero' | 'ritual' | 'field' | 'cta'; link: HTMLAnchorElement }
 
 /** Textos que dependem do scroll: passos do ritual, cartão do campo, CTA e a pílula da navegação. */
-export const initSections = () => {
+export const initSections = (scroll: ScrollModel) => {
   q('#navLogo').innerHTML = logoSvg()
 
   const steps = [...document.querySelectorAll<HTMLElement>('.step')]
@@ -31,8 +31,7 @@ export const initSections = () => {
   const links = [...document.querySelectorAll<HTMLAnchorElement>('.nav__pill a')]
   const sections: NavSection[] = links.flatMap((link) => {
     const id = link.dataset.section
-    const el = id ? document.getElementById(id) : null
-    return id && el ? [{ id, el, link }] : []
+    return id === 'hero' || id === 'ritual' || id === 'field' || id === 'cta' ? [{ id, link }] : []
   })
 
   let activeId = ''
@@ -63,7 +62,7 @@ export const initSections = () => {
     const probe = sc.y + sc.vh * 0.5
     let current = sections[0]?.id ?? 'hero'
     for (const s of sections) {
-      if (s.el.getBoundingClientRect().top + window.scrollY <= probe) current = s.id
+      if (scroll.tops[s.id] <= probe) current = s.id
     }
     setActive(current)
 
